@@ -3,7 +3,6 @@ package protocol;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
 
 public class MySocket {
   private InputStream userInputStream;
@@ -72,6 +71,8 @@ public class MySocket {
 
     this.userInputStream =
         new InputStream() {
+          private boolean finished = false;
+
           @Override
           public int read() throws IOException {
             while (readCounter == 0 && readBuffer[0] == 0) {
@@ -80,7 +81,9 @@ public class MySocket {
             if (readBuffer[readCounter] == 0) {
               // finished reading
               readCounter = 0;
-              Arrays.fill(readBuffer, (byte) 0);
+              finished = true;
+              return -1;
+            } else if (finished) {
               return -1;
             } else {
               System.out.println("received data int tcp: " + readBuffer[readCounter]);

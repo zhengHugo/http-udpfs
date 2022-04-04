@@ -13,12 +13,15 @@ import protocol.MySocket;
 
 public class RunServer {
 
-  public static void listenAndServe(int port, RequestHandler requestHandler, boolean verbose) throws IOException {
+  public static void listenAndServe(int port, RequestHandler requestHandler, boolean verbose)
+      throws IOException {
     MyServerSocket serverSocket = new MyServerSocket(port);
     while (true) {
       MySocket socket = serverSocket.accept();
       System.out.println("Connection built");
-      BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+      BufferedReader reader =
+          new BufferedReader(
+              new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
 
       String line = reader.readLine();
       StringBuilder stringBuilder = new StringBuilder();
@@ -42,7 +45,7 @@ public class RunServer {
       if (request.getHeader().getValue("Content-Length").isPresent()) {
         // read body
         int sizeLeft = Integer.parseInt(request.getHeader().getValue("Content-Length").get());
-        while(sizeLeft > 0) {
+        while (sizeLeft > 0) {
           String nextChar = String.valueOf((char) reader.read());
           sizeLeft -= nextChar.getBytes(StandardCharsets.UTF_8).length;
           bodyBuilder.append(nextChar);
@@ -55,9 +58,10 @@ public class RunServer {
         System.out.println("Response: ");
         System.out.println(response);
       }
-      PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
+      PrintWriter writer =
+          new PrintWriter(
+              new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), false);
       writer.println(response.toString());
-      writer.flush();
       writer.close();
     }
   }

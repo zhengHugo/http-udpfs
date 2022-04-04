@@ -205,7 +205,8 @@ public class MyTcpHost {
             udpPayload, udpPayload.length, InetAddress.getByName(routerAddress), routerPort);
     sequenceNum++;
     datagramSocket.send(udpRequestPacket);
-    System.out.println("send packet seq num: " + packet.getSequenceNum());
+    System.out.println(
+        "send packet seq num: " + packet.getSequenceNum() + " type: " + packet.getPacketType());
   }
 
   private MyTcpPacket receivePacket() throws IOException {
@@ -213,7 +214,11 @@ public class MyTcpHost {
     response = new DatagramPacket(buf, buf.length);
     datagramSocket.receive(response);
     var tcpResponse = MyTcpPacket.fromByte(response.getData());
-    System.out.println("receive packet seq num: " + tcpResponse.getSequenceNum());
+    System.out.println(
+        "receive packet seq num: "
+            + tcpResponse.getSequenceNum()
+            + " type: "
+            + tcpResponse.getPacketType());
     return tcpResponse;
   }
 }
