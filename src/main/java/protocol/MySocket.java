@@ -35,7 +35,7 @@ public class MySocket {
     return this.userInputStream;
   }
 
-  public void close() {
+  public void close() throws IOException {
     myTcpHost.close();
   }
 

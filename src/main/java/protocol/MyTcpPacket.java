@@ -149,6 +149,7 @@ public class MyTcpPacket {
 }
 
 enum PacketType {
+  FIN,
   DATA,
   ACK,
   SYN,
@@ -162,6 +163,7 @@ enum PacketType {
       case SYN -> 2;
       case SYN_ACK -> 3;
       case DATA_ACK -> 4;
+      case FIN -> 5;
     };
   }
 
@@ -172,6 +174,7 @@ enum PacketType {
       case 2 -> SYN;
       case 3 -> SYN_ACK;
       case 4 -> DATA_ACK;
+      case 5 -> FIN;
       default -> throw new IllegalArgumentException("Invalid byte for a packet type");
     };
   }
