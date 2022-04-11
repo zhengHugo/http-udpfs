@@ -205,22 +205,8 @@ public class MyTcpHost {
     } else if (incomingPacket.getPacketType().equals(PacketType.FIN)) {
       // receiver receives close request
       sendCloseResponsePacket();
-      new Timer()
-          .scheduleAtFixedRate(
-              new TimerTask() {
-                @Override
-                public void run() {
-                  try {
-                    serverSendLastClose();
-                  } catch (IOException e) {
-                    e.printStackTrace();
-                  }
-                }
-              },
-              timeout,
-              timeout);
-      receiveLastClosePacket();
-      return null;
+      serverSendLastClose();
+      System.exit(0);
     } else if (this.state.equals(HostState.SYN_RCVD)) {
 
       if (incomingPacket.getSequenceNum() == 1
@@ -254,39 +240,17 @@ public class MyTcpHost {
               .withSequenceNum(sequenceNum)
               .withPayload(new byte[1])
               .build();
-      timers[sequenceNum % windowSize].scheduleAtFixedRate(
-          new TimerTask() {
-            @Override
-            public void run() {
-              try {
-                sendPacket(closeRequestPacket);
-                sequenceNum--;
-              } catch (IOException e) {
-                e.printStackTrace();
-              }
-            }
-          },
-          timeout,
-          timeout);
-      System.out.println("This is client: " + this.isClient);
-      System.out.println("This state: " + this.state);
-      sendPacket(closeRequestPacket);
-    }
-
-    long t = System.currentTimeMillis();
-    long end = t + timeout * 2;
-    while (System.currentTimeMillis() < end) {
-      MyTcpPacket incomingPacket = receivePacket();
-      if (incomingPacket.getPacketType().equals(PacketType.ACK)) {
-        incomingPacket = receivePacket();
-        if (incomingPacket.getPacketType().equals(PacketType.FIN)) {
-          clientSendLastClose();
+      for (int i = 0; i < 10; i++) {
+        sendPacket(closeRequestPacket);
+        try {
+          Thread.sleep(timeout);
+        } catch (InterruptedException e) {
+          e.printStackTrace();
         }
-      } else if (incomingPacket.getPacketType().equals(PacketType.FIN)) {
-        clientSendLastClose();
       }
     }
   }
+
 
   private void sendPacket(MyTcpPacket packet) throws IOException {
     var udpPayload = packet.toBytes();
