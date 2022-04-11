@@ -17,7 +17,7 @@ import lib.entity.Response;
 
 public class RequestHandlerImpl implements RequestHandler {
 
-  private final String DEFAULT_ROOT_DIR = "/Users/hugozheng/Projects/java/httpfs/src/main/resources/data";
+  private final String DEFAULT_ROOT_DIR = "/Users/hugozheng/Projects/java/http-udpfs/src/main/resources/data";
   private String rootDir = DEFAULT_ROOT_DIR;
 
   public void setRootDir(String rootDir) {
@@ -108,7 +108,7 @@ public class RequestHandlerImpl implements RequestHandler {
       } catch (IOException e) {
         e.printStackTrace();
       }
-      System.out.println(response);
+//      System.out.println(response);
       return response;
     }
   }

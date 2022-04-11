@@ -1,6 +1,5 @@
 package protocol;
 
-
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -38,12 +37,12 @@ public class MyTcpHost {
   private MyTcpPacket lastSentPacket;
 
   public MyTcpHost(int port) throws SocketException {
+    datagramSocket = new DatagramSocket(port);
     serverInit(port);
   }
 
   public void serverInit(int port) throws SocketException {
     this.listenPort = port;
-    datagramSocket = new DatagramSocket(listenPort);
     this.state = HostState.LISTEN;
     this.sequenceNum = INIT_SEQ_NUM;
     timers = new Timer[windowSize];
@@ -81,24 +80,26 @@ public class MyTcpHost {
             .build();
 
     sendPacket(firstConnectionRequest);
-    timers[0].schedule(
+    timers[0].scheduleAtFixedRate(
         new TimerTask() {
           @Override
           public void run() {
             try {
               sendPacket(firstConnectionRequest);
+              sequenceNum--;
             } catch (IOException e) {
               e.printStackTrace();
             }
           }
         },
+        timeout,
         timeout);
     System.out.println("Sent first connection packet");
     var firstConnectionResponse = receivePacket();
     timers[0].cancel();
     System.out.println("received first connection packet");
     if (!firstConnectionResponse.getPacketType().equals(PacketType.SYN_ACK)
-        || firstConnectionResponse.getSequenceNum() != sequenceNum - 1) {
+        || firstConnectionResponse.getSequenceNum() != 0) {
       throw new IOException("Connection fail");
     }
     this.state = HostState.SYNSENT;
@@ -138,40 +139,44 @@ public class MyTcpHost {
         // sender third handshake
         packetToSend = packetBuilder.withPacketType(PacketType.ACK).build();
         MyTcpPacket finalRequestPacket = packetToSend;
-        timers[1].schedule(
+        timers[1].scheduleAtFixedRate(
             new TimerTask() {
               @Override
               public void run() {
                 try {
                   sendPacket(finalRequestPacket);
+                  sequenceNum--;
                 } catch (IOException e) {
                   e.printStackTrace();
                 }
               }
             },
+            timeout,
             timeout);
       } else if (this.state.equals(HostState.ESTAB) && this.isClient) {
         // sender send data
         packetToSend = packetBuilder.withPacketType(PacketType.DATA).build();
         MyTcpPacket finalRequestPacket = packetToSend;
-        timers[sequenceNum % windowSize].schedule(
+        timers[sequenceNum % windowSize].scheduleAtFixedRate(
             new TimerTask() {
               @Override
               public void run() {
                 try {
                   sendPacket(finalRequestPacket);
+                  sequenceNum--;
                 } catch (IOException e) {
                   e.printStackTrace();
                 }
               }
             },
+            timeout,
             timeout);
-      } else if (this.state.equals(HostState.SYN_RCVD)) {
+      } else if (this.state.equals(HostState.ESTAB)) {
         // receiver response to third handshake
         packetToSend = packetBuilder.withPacketType(PacketType.ACK).build();
         this.lastSentPacket = packetToSend;
-//      } else if (this.state.equals(HostState.ESTAB) && !this.isClient) {
-//        packetToSend = packetBuilder.withPacketType(ACK).build();
+        //      } else if (this.state.equals(HostState.ESTAB) && !this.isClient) {
+        //        packetToSend = packetBuilder.withPacketType(ACK).build();
       }
       System.out.println("This is client: " + this.isClient);
       System.out.println("This state: " + this.state);
@@ -184,33 +189,52 @@ public class MyTcpHost {
 
   public byte[] receive() throws IOException {
     var incomingPacket = receivePacket();
-    if (this.state.equals(HostState.ESTAB)
+    if (this.isClient
+        && this.state.equals(HostState.ESTAB)
         && incomingPacket.getPacketType().equals(PacketType.ACK)
         && incomingPacket.getSequenceNum() == sequenceNum - 1) {
       // sender received response
       timers[incomingPacket.getSequenceNum() % windowSize].cancel();
       this.unAckedPacketNum--;
       return incomingPacket.getPayload();
-    } else if (incomingPacket.getPacketType().equals(PacketType.FIN)
-        && incomingPacket.getSequenceNum() == sequenceNum - 1) {
+    } else if (this.state.equals(HostState.ESTAB) && incomingPacket.getSequenceNum() == 1) {
+      // receiver resend packet 1
+      sendPacket(lastSentPacket);
+      sequenceNum--;
+      return receive();
+    } else if (incomingPacket.getPacketType().equals(PacketType.FIN)) {
       // receiver receives close request
       sendCloseResponsePacket();
-      serverSendLastClose();
+      new Timer()
+          .scheduleAtFixedRate(
+              new TimerTask() {
+                @Override
+                public void run() {
+                  try {
+                    serverSendLastClose();
+                  } catch (IOException e) {
+                    e.printStackTrace();
+                  }
+                }
+              },
+              timeout,
+              timeout);
       receiveLastClosePacket();
       return null;
-    } else if ((this.state.equals(HostState.SYN_RCVD) && incomingPacket.getPacketType().equals(PacketType.DATA))
-        || (this.state.equals(HostState.ESTAB)
-            && incomingPacket.getPacketType().equals(PacketType.DATA))) {
+    } else if (this.state.equals(HostState.SYN_RCVD)) {
 
-      if (incomingPacket.getSequenceNum() == sequenceNum) {
+      if (incomingPacket.getSequenceNum() == 1
+          && incomingPacket.getPacketType().equals(PacketType.ACK)) {
         // receiver receive or third handshake
         this.unAckedPacketNum--;
         this.destAddress = incomingPacket.getPeerAddress();
         this.destPort = incomingPacket.getPeerPort();
+        this.state = HostState.ESTAB;
         return incomingPacket.getPayload();
-      } else if (incomingPacket.getSequenceNum() == sequenceNum - 1) {
+      } else if (incomingPacket.getSequenceNum() == 0) {
         // receiver learned that last response packet lost: resend last packet
         sendPacket(lastSentPacket);
+        sequenceNum--;
         return receive();
       }
     } else {
@@ -220,10 +244,48 @@ public class MyTcpHost {
   }
 
   void close() throws IOException {
-    clientSendClose();
-    severSendClose();
-    serverSendLastClose();
-    clientSendLastClose();
+    // client send first FIN packet
+    if (this.isClient) {
+      var closeRequestPacket =
+          new MyTcpPacket.Builder()
+              .withPeerAddress(destAddress)
+              .withPeerPort(destPort)
+              .withPacketType(PacketType.FIN)
+              .withSequenceNum(sequenceNum)
+              .withPayload(new byte[1])
+              .build();
+      timers[sequenceNum % windowSize].scheduleAtFixedRate(
+          new TimerTask() {
+            @Override
+            public void run() {
+              try {
+                sendPacket(closeRequestPacket);
+                sequenceNum--;
+              } catch (IOException e) {
+                e.printStackTrace();
+              }
+            }
+          },
+          timeout,
+          timeout);
+      System.out.println("This is client: " + this.isClient);
+      System.out.println("This state: " + this.state);
+      sendPacket(closeRequestPacket);
+    }
+
+    long t = System.currentTimeMillis();
+    long end = t + timeout * 2;
+    while (System.currentTimeMillis() < end) {
+      MyTcpPacket incomingPacket = receivePacket();
+      if (incomingPacket.getPacketType().equals(PacketType.ACK)) {
+        incomingPacket = receivePacket();
+        if (incomingPacket.getPacketType().equals(PacketType.FIN)) {
+          clientSendLastClose();
+        }
+      } else if (incomingPacket.getPacketType().equals(PacketType.FIN)) {
+        clientSendLastClose();
+      }
+    }
   }
 
   private void sendPacket(MyTcpPacket packet) throws IOException {
@@ -246,49 +308,11 @@ public class MyTcpHost {
     System.out.println(
         "receive packet seq num: "
             + tcpResponse.getSequenceNum()
-            + " type: "
-            + tcpResponse.getPacketType());
+            + ", type: "
+            + tcpResponse.getPacketType()
+            + ", length: "
+            + tcpResponse.getPayload().length);
     return tcpResponse;
-  }
-
-  public void clientSendClose() throws IOException {
-    if (this.isClient) {
-      var packetBuilder =
-          new MyTcpPacket.Builder().withPeerAddress(destAddress).withPeerPort(destPort);
-      MyTcpPacket requestPacket = null;
-      packetBuilder.withPacketType(PacketType.FIN);
-      requestPacket = packetBuilder.withSequenceNum(sequenceNum).build();
-      MyTcpPacket closeRequestPacket = requestPacket;
-      timers[sequenceNum % windowSize].schedule(
-          new TimerTask() {
-            @Override
-            public void run() {
-              try {
-                sendPacket(closeRequestPacket);
-              } catch (IOException e) {
-                e.printStackTrace();
-              }
-            }
-          },
-          timeout);
-      System.out.println("This is client: " + this.isClient);
-      System.out.println("This state: " + this.state);
-      sendPacket(closeRequestPacket);
-    }
-  }
-
-  public void severSendClose() throws IOException {
-    if (!this.isClient) {
-      var incomingPacket = receivePacket();
-      // check receive
-      if (incomingPacket.getPacketType().equals(PacketType.FIN)
-          && (incomingPacket.getSequenceNum() == sequenceNum)) {
-        timers[sequenceNum].cancel();
-        sendCloseResponsePacket();
-      } else {
-        clientSendClose();
-      }
-    }
   }
 
   public void serverSendLastClose() throws IOException {
@@ -299,6 +323,7 @@ public class MyTcpHost {
               .withPeerPort(destPort)
               .withPacketType(PacketType.FIN)
               .withSequenceNum(sequenceNum)
+              .withPayload(new byte[1])
               .build();
       System.out.println("This is client: " + this.isClient);
       System.out.println("This state: " + this.state);
@@ -324,6 +349,7 @@ public class MyTcpHost {
             .withPeerPort(destPort)
             .withPacketType(PacketType.ACK)
             .withSequenceNum(sequenceNum)
+            .withPayload(new byte[1])
             .build();
     System.out.println("This is client: " + this.isClient);
     System.out.println("This state: " + this.state);

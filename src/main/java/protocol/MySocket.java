@@ -86,7 +86,6 @@ public class MySocket {
             } else if (finished) {
               return -1;
             } else {
-              System.out.println("received data int tcp: " + readBuffer[readCounter]);
               return readBuffer[readCounter++];
             }
           }
